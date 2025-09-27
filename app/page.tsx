@@ -1,3 +1,4 @@
+// app/page.tsx
 "use client"
 
 import { useEffect, useState } from "react"
@@ -10,7 +11,7 @@ import { Trash2, Info } from "lucide-react"
 import { useMarkers } from "@/hooks/use-markers"
 import type { Marker, Location, HologramCardData } from "@/lib/types"
 
-// NEW: trip selection + UI
+// NEW
 import { useTripSelection } from "@/hooks/use-trip"
 import TripCard from "@/components/trip-card"
 
@@ -22,14 +23,11 @@ export default function CelestiaPage() {
   const [selectedCard, setSelectedCard] = useState<HologramCardData | null>(null)
   const [isAddingMarker, setIsAddingMarker] = useState(false)
 
-  // Distance + clear signal (existing)
   const [totalKm, setTotalKm] = useState(0)
   const [clearSignal, setClearSignal] = useState(0)
 
-  // NEW: trip selection state (previous → current)
+  // NEW: trip selection + state
   const { previous, current, select, hasHop } = useTripSelection()
-
-  // NEW: trip API state
   const [tripLoading, setTripLoading] = useState(false)
   const [tripData, setTripData] = useState<TripResp | null>(null)
 
@@ -48,32 +46,30 @@ export default function CelestiaPage() {
   const handleMarkerClick = (marker: Marker, position: { x: number; y: number }) => {
     console.log("[v0] Marker clicked:", marker.name, "Facts:", marker.facts.length, "Videos:", marker.videos.length)
 
-    // NEW: remember hop endpoints for TripCard
+    // NEW: remember hop endpoints
     select({
       id: marker.id,
       name: marker.name,
       lat: marker.lat,
       lng: marker.lng,
-      // @ts-expect-error optional in your type; add if present
+      // @ts-expect-error optional in your types
       iata: (marker as any).iata,
     })
 
-    // existing hologram
     setSelectedCard({ marker, isVisible: true, position })
   }
 
   const handleCloseCard = () => setSelectedCard(null)
 
-  // Clear flights/trails *and* markers
   const handleClearAll = () => {
     clearMarkers()
-    setClearSignal((s) => s + 1) // tells Globe to wipe arcs/plane immediately
+    setClearSignal((s) => s + 1)
     setTotalKm(0)
     setSelectedCard(null)
-    setTripData(null) // NEW: also clear trip state
+    setTripData(null) // NEW
   }
 
-  // NEW: fetch trip (previous → current) when hop is valid
+  // NEW: fetch trip once we have previous → current
   useEffect(() => {
     const run = async () => {
       if (!hasHop || !previous || !current) {
@@ -86,20 +82,8 @@ export default function CelestiaPage() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            from: {
-              name: previous.name,
-              lat: previous.lat,
-              lng: previous.lng,
-              // @ts-expect-error optional
-              iata: (previous as any).iata,
-            },
-            to: {
-              name: current.name,
-              lat: current.lat,
-              lng: current.lng,
-              // @ts-expect-error optional
-              iata: (current as any).iata,
-            },
+            from: { name: previous.name, lat: previous.lat, lng: previous.lng, iata: (previous as any).iata },
+            to:   { name: current.name,  lat: current.lat,  lng: current.lng,  iata: (current as any).iata },
           }),
         })
         const data = await r.json()
@@ -114,7 +98,6 @@ export default function CelestiaPage() {
     run()
   }, [hasHop, previous, current])
 
-  // NEW: manual refresh for TripCard
   const refreshTrip = async () => {
     if (!previous || !current) return
     setTripLoading(true)
@@ -124,26 +107,12 @@ export default function CelestiaPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          from: {
-            name: previous.name,
-            lat: previous.lat,
-            lng: previous.lng,
-            // @ts-expect-error optional
-            iata: (previous as any).iata,
-          },
-          to: {
-            name: current.name,
-            lat: current.lat,
-            lng: current.lng,
-            // @ts-expect-error optional
-            iata: (current as any).iata,
-          },
+          from: { name: previous.name, lat: previous.lat, lng: previous.lng, iata: (previous as any).iata },
+          to:   { name: current.name,  lat: current.lat,  lng: current.lng,  iata: (current as any).iata },
         }),
       })
       const data = await r.json()
       setTripData(data)
-    } catch (e) {
-      console.error("Trip refresh failed:", e)
     } finally {
       setTripLoading(false)
     }
@@ -237,24 +206,9 @@ export default function CelestiaPage() {
               </div>
             )
           })()}
-
-        {markers.length === 0 && !isLoading && (
-          <div className="absolute top-4 left-4 pointer-events-none">
-            <div className="text-left bg-black/40 backdrop-blur-sm border border-cyan-400/20 rounded-xl p-6 max-w-sm">
-              <div className="w-12 h-12 bg-gradient-to-br from-cyan-400 to-blue-500 rounded-full mb-3 flex items-center justify-center">
-                <div className="w-6 h-6 bg-white rounded-full animate-pulse" />
-              </div>
-              <h2 className="text-lg font-semibold text-cyan-100 mb-2">Welcome to CELESTIA</h2>
-              <p className="text-cyan-400/80 text-sm leading-relaxed">
-                Search for any location to drop a holographic marker on the globe. Each marker shows AI-generated facts
-                and related videos.
-              </p>
-            </div>
-          </div>
-        )}
       </main>
 
-      {/* Hologram Card (video + facts) */}
+      {/* Discovery/Hologram Card */}
       {selectedCard && (
         <HologramCard
           marker={selectedCard.marker}
@@ -264,17 +218,19 @@ export default function CelestiaPage() {
         />
       )}
 
-      {/* Trip Card — shows alongside the hologram when a hop exists */}
+      {/* Trip Card — bottom-left; same animate-in utilities as HologramCard */}
       {hasHop && previous && current && (
-        <div className="fixed bottom-6 right-6 z-20">
-          <TripCard
-            fromName={previous.name}
-            toName={current.name}
-            isLoading={tripLoading}
-            itinerary={tripData?.itinerary}
-            flights={tripData?.flights}
-            onRefresh={refreshTrip}
-          />
+        <div className="fixed bottom-6 left-6 z-20 pointer-events-auto">
+          <div className="w-96 animate-in fade-in-0 zoom-in-95 duration-300">
+            <TripCard
+              fromName={previous.name}
+              toName={current.name}
+              isLoading={tripLoading}
+              itinerary={tripData?.itinerary}
+              flights={tripData?.flights}
+              onRefresh={refreshTrip}
+            />
+          </div>
         </div>
       )}
 
