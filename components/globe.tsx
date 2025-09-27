@@ -13,71 +13,64 @@ interface GlobeComponentProps {
   selectedMarkerId?: string
 }
 
-export function GlobeComponent({ markers, onMarkerClick, selectedMarkerId }: GlobeComponentProps) {
-  const globeRef = useRef<any>()
+export function GlobeComponent({
+  markers,
+  onMarkerClick,
+  selectedMarkerId,
+}: GlobeComponentProps) {
+  const globeRef = useRef<any>(null)
   const [globeReady, setGlobeReady] = useState(false)
 
+  // Initialize camera + autorotate after textures are ready (prod safe)
   useEffect(() => {
-    if (globeRef.current && globeReady) {
-      // Set initial camera position
-      globeRef.current.pointOfView({ altitude: 2.5 })
+    if (!globeRef.current || !globeReady) return
 
-      // Enable auto-rotation
-      globeRef.current.controls().autoRotate = true
-      globeRef.current.controls().autoRotateSpeed = 0.5
-    }
+    const raf = requestAnimationFrame(() => {
+      const controls = globeRef.current?.controls?.()
+
+      // Intro pose
+      globeRef.current?.pointOfView?.({ altitude: 2.5 }, 800)
+
+      if (controls) {
+        controls.autoRotate = true
+        controls.autoRotateSpeed = 0.45
+
+        // Keep spinning after user interaction
+        const handleEnd = () => {
+          controls.autoRotate = true
+        }
+        controls.addEventListener?.("end", handleEnd)
+
+        return () => {
+          controls.removeEventListener?.("end", handleEnd)
+        }
+      }
+    })
+
+    return () => cancelAnimationFrame(raf)
   }, [globeReady])
 
+  // Fly to the newest marker deterministically
   useEffect(() => {
-    if (globeRef.current && globeReady && markers.length > 0) {
-      // Get the most recent marker (last in array)
-      const latestMarker = markers[markers.length - 1]
+    if (!globeRef.current || !globeReady || markers.length === 0) return
+    const m = markers[markers.length - 1]
+    globeRef.current.pointOfView(
+      { lat: m.lat, lng: m.lng, altitude: 1.6 },
+      1400
+    )
+  }, [markers.length, globeReady])
 
-      // Animate to the new marker location
-      globeRef.current.pointOfView(
-        {
-          lat: latestMarker.lat,
-          lng: latestMarker.lng,
-          altitude: 1.5, // Zoom in closer
-        },
-        2000, // Animation duration in ms
-      )
+  const handleMarkerClick = (marker: Marker, event: any) => {
+    const canvas = event?.target as HTMLElement | null
+    const rect = canvas?.getBoundingClientRect?.()
+    const position = rect
+      ? { x: event.clientX - rect.left, y: event.clientY - rect.top }
+      : { x: 0, y: 0 }
 
-      // After zooming, zoom back out slightly for better view
-      setTimeout(() => {
-        if (globeRef.current) {
-          globeRef.current.pointOfView(
-            {
-              lat: latestMarker.lat,
-              lng: latestMarker.lng,
-              altitude: 2.0, // Slightly zoomed out
-            },
-            1000,
-          )
-        }
-      }, 2500)
-    }
-  }, [markers, globeReady]) // Updated dependency to include markers
-
-  const handleMarkerClick = (marker: any, event: any) => {
-    const canvas = event.target
-    const rect = canvas.getBoundingClientRect()
-    const position = {
-      x: event.clientX - rect.left,
-      y: event.clientY - rect.top,
-    }
-
-    // Also zoom to clicked marker
-    if (globeRef.current) {
-      globeRef.current.pointOfView(
-        {
-          lat: marker.lat,
-          lng: marker.lng,
-          altitude: 1.8,
-        },
-        1500,
-      )
-    }
+    globeRef.current?.pointOfView?.(
+      { lat: marker.lat, lng: marker.lng, altitude: 1.8 },
+      1500
+    )
 
     onMarkerClick(marker, position)
   }
@@ -86,28 +79,35 @@ export function GlobeComponent({ markers, onMarkerClick, selectedMarkerId }: Glo
     <div className="relative w-full h-full">
       <Globe
         ref={globeRef}
-         globeImageUrl="/textures/earth-night.jpg"
+        // Local textures (served from /public)
+        globeImageUrl="/textures/earth-night.jpg"
         bumpImageUrl="/textures/earth-topology.png"
         backgroundImageUrl="/textures/night-sky.png"
-        // Markers configuration
+
+        // Points (markers)
         pointsData={markers}
         pointAltitude={0.02}
         pointRadius={0.8}
-        pointColor={(marker: any) => (selectedMarkerId === marker.id ? "#00ffff" : "#ff6b6b")}
-        pointLabel={(marker: any) => `
+        pointColor={(m: any) =>
+          selectedMarkerId === m.id ? "#00ffff" : "#ff6b6b"
+        }
+        pointLabel={(m: any) => `
           <div class="bg-black/80 text-cyan-400 px-2 py-1 rounded text-sm border border-cyan-400/30">
-            ${marker.name}
+            ${m.name}
           </div>
         `}
         onPointClick={handleMarkerClick}
-        // Globe styling
+
+        // Atmosphere / look
         atmosphereColor="#00ffff"
         atmosphereAltitude={0.15}
-        // Animation settings
-        animateIn={true}
+
+        // Animation + readiness
+        animateIn={false}           // avoid race with our own tween
         waitForGlobeReady={true}
         onGlobeReady={() => setGlobeReady(true)}
-        // Controls
+
+        // Interaction
         enablePointerInteraction={true}
       />
 
@@ -128,9 +128,9 @@ export function GlobeComponent({ markers, onMarkerClick, selectedMarkerId }: Glo
             className="w-full h-full bg-gradient-to-r from-transparent via-cyan-400/10 to-transparent"
             style={{
               backgroundImage: `
-                   linear-gradient(90deg, transparent 49%, rgba(0,255,255,0.1) 50%, transparent 51%),
-                   linear-gradient(0deg, transparent 49%, rgba(0,255,255,0.1) 50%, transparent 51%)
-                 `,
+                linear-gradient(90deg, transparent 49%, rgba(0,255,255,0.1) 50%, transparent 51%),
+                linear-gradient(0deg, transparent 49%, rgba(0,255,255,0.1) 50%, transparent 51%)
+              `,
               backgroundSize: "40px 40px",
             }}
           />
