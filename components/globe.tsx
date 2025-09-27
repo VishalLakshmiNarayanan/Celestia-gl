@@ -73,6 +73,32 @@ export function GlobeComponent({
     }
   }, [globeReady])
 
+  // keeper: make sure autoRotate stays on in production
+useEffect(() => {
+  if (!globeRef.current || !globeReady) return;
+  const controls = globeRef.current.controls?.();
+  if (!controls) return;
+
+  // Re-enable spin if something disables it.
+  const id = setInterval(() => {
+    const c = globeRef.current?.controls?.();
+    if (c && !c.autoRotate) c.autoRotate = true;
+  }, 2000);
+
+  // Also re-enable on window focus
+  const onFocus = () => {
+    const c = globeRef.current?.controls?.();
+    if (c) c.autoRotate = true;
+  };
+  window.addEventListener("focus", onFocus);
+
+  return () => {
+    clearInterval(id);
+    window.removeEventListener("focus", onFocus);
+  };
+}, [globeReady]);
+
+
   // UX: nudge camera to latest marker (non-blocking)
   useEffect(() => {
     if (!globeRef.current || !globeReady || markers.length === 0) return
@@ -191,7 +217,7 @@ export function GlobeComponent({
   }, [])
 
   return (
-    <div className="relative w-full h-[min(75vh,720px)]">
+    <div className="relative w-full h-full">
       <Globe
         ref={globeRef}
         globeImageUrl="/textures/earth-night.jpg"
