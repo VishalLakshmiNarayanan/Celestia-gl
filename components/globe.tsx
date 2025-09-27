@@ -1,9 +1,9 @@
 "use client"
 
-import { useEffect, useRef, useState, useMemo } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import dynamic from "next/dynamic"
 import * as THREE from "three"
-import { geoInterpolate } from "d3-geo"              // npm i d3-geo
+import { geoInterpolate } from "d3-geo"
 import type { Marker } from "@/lib/types"
 
 const Globe = dynamic(() => import("react-globe.gl"), { ssr: false })
@@ -15,6 +15,7 @@ interface GlobeComponentProps {
 }
 
 type Arc = { startLat: number; startLng: number; endLat: number; endLng: number; color?: string }
+type Plane = { lat: number; lng: number; alt: number }
 
 export function GlobeComponent({
   markers,
@@ -23,17 +24,17 @@ export function GlobeComponent({
 }: GlobeComponentProps) {
   const globeRef = useRef<any>(null)
 
-  // Mount + ready guards
+  // mount/ready guards
   const isMounted = useRef(false)
   const readySignal = useRef(false)
   const [globeReady, setGlobeReady] = useState(false)
 
-  // Flight state
+  // flight state
   const [arcs, setArcs] = useState<Arc[]>([])
-  const [plane, setPlane] = useState<{ lat: number; lng: number; alt: number } | null>(null)
+  const [plane, setPlane] = useState<Plane | null>(null)
   const flightRaf = useRef<number | null>(null)
 
-  // --- lifecycle guards
+  // ---------- lifecycle ----------
   useEffect(() => {
     isMounted.current = true
     if (readySignal.current && !globeReady) setGlobeReady(true)
@@ -43,7 +44,6 @@ export function GlobeComponent({
     }
   }, [globeReady])
 
-  // --- camera + autorotate once ready
   useEffect(() => {
     if (!globeRef.current || !globeReady) return
     const controls = globeRef.current?.controls?.()
@@ -57,82 +57,85 @@ export function GlobeComponent({
     }
   }, [globeReady])
 
-  // --- zoom to latest marker when data changes
+  // Fly camera to latest marker (nice UX)
   useEffect(() => {
     if (!globeRef.current || !globeReady || markers.length === 0) return
     const m = markers[markers.length - 1]
-    globeRef.current.pointOfView({ lat: m.lat, lng: m.lng, altitude: 1.6 }, 1400)
+    globeRef.current.pointOfView({ lat: m.lat, lng: m.lng, altitude: 1.6 }, 1200)
   }, [markers.length, globeReady])
 
-  // --- click handler (unchanged)
-  const handleMarkerClick = (marker: Marker, event: any) => {
-    const canvas = event?.target as HTMLElement | null
-    const rect = canvas?.getBoundingClientRect?.()
-    const position = rect
-      ? { x: event.clientX - rect.left, y: event.clientY - rect.top }
-      : { x: 0, y: 0 }
-
-    globeRef.current?.pointOfView?.({ lat: marker.lat, lng: marker.lng, altitude: 1.8 }, 1500)
-    onMarkerClick(marker, position)
-  }
-
-  // ---------- ✈️ FLIGHT LOGIC ----------
-  // Call this to start a flight: startFlight("idA","idB")
+  // ---------- flight logic ----------
   const startFlight = (
-    fromId: string,
-    toId: string,
-    opts: { durationMs?: number; altitude?: number; color?: string } = {}
+    from: Marker,
+    to: Marker,
+    opts: { durationMs?: number; color?: string; arcAltitude?: number } = {}
   ) => {
     const duration = opts.durationMs ?? 3500
-    const arcAlt = opts.altitude ?? 0.18       // how "high" the arc looks
-    const arcColor = opts.color ?? "#00ffff"
+    const color = opts.color ?? "#00ffff"
+    const arcAltitude = opts.arcAltitude ?? 0.18
 
-    const from = markers.find(m => m.id === fromId)
-    const to = markers.find(m => m.id === toId)
-    if (!from || !to) return
+    // show dotted arc
+    setArcs([{ startLat: from.lat, startLng: from.lng, endLat: to.lat, endLng: to.lng, color }])
 
-    // 1) Show (or update) the dotted arc
-    setArcs([{ startLat: from.lat, startLng: from.lng, endLat: to.lat, endLng: to.lng, color: arcColor }])
-
-    // 2) Interpolator along great-circle
-    const interp = geoInterpolate([from.lng, from.lat], [to.lng, to.lat])
-
-    // 3) Animate the "plane" object along the path
+    // animate plane along great circle
     if (flightRaf.current) cancelAnimationFrame(flightRaf.current)
-    const start = performance.now()
+    const interp = geoInterpolate([from.lng, from.lat], [to.lng, to.lat])
+    const t0 = performance.now()
 
     const tick = () => {
-      const t = Math.min(1, (performance.now() - start) / duration)
+      const t = Math.min(1, (performance.now() - t0) / duration)
       const [lng, lat] = interp(t)
-      // altitude here is the camera-height (not arc height). Keep it low so it's visible "on" the globe
-      setPlane({ lat, lng, alt: 0.02 })
+      setPlane({ lat, lng, alt: 0.02 }) // small altitude so it hugs the globe
       if (t < 1) {
         flightRaf.current = requestAnimationFrame(tick)
       } else {
         flightRaf.current = null
+        // optional: clear trail/plane after arrival
+        // setArcs([])
+        // setPlane(null)
       }
     }
     tick()
 
-    // 4) Optional: move the camera to follow (comment out if you don't want this)
+    // optional camera move following the route
     globeRef.current?.pointOfView?.({ lat: from.lat, lng: from.lng, altitude: 1.8 }, 600)
     setTimeout(() => {
       globeRef.current?.pointOfView?.({ lat: to.lat, lng: to.lng, altitude: 1.8 }, Math.max(900, duration - 600))
     }, 600)
   }
 
-  // Expose the starter if you want to trigger from outside (optional)
-  ;(globalThis as any).__startFlight = startFlight
-  // Usage in console: __startFlight("markerIdA","markerIdB")
+  // Auto-start flight when a new marker is added (previous ➜ latest)
+  useEffect(() => {
+    if (!globeReady || markers.length < 2) return
+    const from = markers[markers.length - 2]
+    const to = markers[markers.length - 1]
+    startFlight(from, to)
+  }, [markers.length, globeReady]) // runs only when count increases
 
-  // --- plane mesh (tiny cone). Swap for sprite/GLTF if you prefer.
+  // optional: expose for console testing: __fly("idA","idB")
+  ;(globalThis as any).__fly = (a: string, b: string) => {
+    const from = markers.find(m => m.id === a)
+    const to = markers.find(m => m.id === b)
+    if (from && to) startFlight(from, to)
+  }
+
+  // click handler (unchanged)
+  const handleMarkerClick = (marker: Marker, event: any) => {
+    const rect = (event?.target as HTMLElement)?.getBoundingClientRect?.()
+    const position = rect
+      ? { x: event.clientX - rect.left, y: event.clientY - rect.top }
+      : { x: 0, y: 0 }
+    globeRef.current?.pointOfView?.({ lat: marker.lat, lng: marker.lng, altitude: 1.8 }, 1000)
+    onMarkerClick(marker, position)
+  }
+
+  // tiny cone as the plane (swap with sprite/GLTF if you want)
   const planeObjectFactory = useMemo(() => {
-    const geom = new THREE.ConeGeometry(0.04, 0.12, 12)  // radius, height, segments
+    const geom = new THREE.ConeGeometry(0.04, 0.12, 12)
     const mat = new THREE.MeshBasicMaterial({ color: 0xffffff })
     return () => {
       const mesh = new THREE.Mesh(geom, mat)
-      // Point forward-ish
-      mesh.rotateX(Math.PI / 2)
+      mesh.rotateX(Math.PI / 2) // face forward
       return mesh
     }
   }, [])
@@ -145,7 +148,7 @@ export function GlobeComponent({
         bumpImageUrl="/textures/earth-topology.png"
         backgroundImageUrl="/textures/night-sky.png"
 
-        // --- Points / markers
+        /* markers */
         pointsData={markers}
         pointAltitude={0.02}
         pointRadius={0.8}
@@ -157,28 +160,26 @@ export function GlobeComponent({
         `}
         onPointClick={handleMarkerClick}
 
-        // --- ✨ Dotted arc trail
+        /* dotted trail */
         arcsData={arcs}
         arcColor={(a: Arc) => a.color ?? "#00ffff"}
-        arcAltitude={0.18}            // visual height of arc
+        arcAltitude={0.18}
         arcStroke={0.6}
-        arcDashLength={0.08}          // short dash = dotted feel
+        arcDashLength={0.08}
         arcDashGap={0.02}
-        arcDashInitialGap={1}         // start off-screen
-        arcDashAnimateTime={1200}     // how fast the dashes move
+        arcDashInitialGap={1}
+        arcDashAnimateTime={1200}
 
-        // --- ✈️ Plane object
+        /* plane object */
         objectsData={plane ? [plane] : []}
-        objectLat={(d: any) => d.lat}
-        objectLng={(d: any) => d.lng}
-        objectAltitude={(d: any) => d.alt}
+        objectLat={(d: Plane) => d.lat}
+        objectLng={(d: Plane) => d.lng}
+        objectAltitude={(d: Plane) => d.alt}
         objectThreeObject={planeObjectFactory}
 
-        // Atmosphere / look
         atmosphereColor="#00ffff"
         atmosphereAltitude={0.15}
 
-        // Readiness
         animateIn={false}
         waitForGlobeReady
         onGlobeReady={() => {
@@ -188,7 +189,7 @@ export function GlobeComponent({
         enablePointerInteraction
       />
 
-      {/* Holographic overlay ... (keep your existing overlays) */}
+      {/* your HUD overlays stay the same */}
     </div>
   )
 }
