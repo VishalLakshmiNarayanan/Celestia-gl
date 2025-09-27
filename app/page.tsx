@@ -11,11 +11,12 @@ import { Trash2, Info } from "lucide-react"
 import { useMarkers } from "@/hooks/use-markers"
 import type { Marker, Location, HologramCardData } from "@/lib/types"
 
-// NEW
+// Trip hop logic + UI
 import { useTripSelection } from "@/hooks/use-trip"
 import TripCard from "@/components/trip-card"
 
-type TripResp = { itinerary: any; flights: any[] }
+// include flightsUrl from API
+type TripResp = { itinerary: any; flights: any[]; flightsUrl?: string }
 
 export default function CelestiaPage() {
   const { markers, addMarker, clearMarkers, isLoading } = useMarkers()
@@ -26,10 +27,11 @@ export default function CelestiaPage() {
   const [totalKm, setTotalKm] = useState(0)
   const [clearSignal, setClearSignal] = useState(0)
 
-  // NEW: trip selection + state
+  // Trip selection + state
   const { previous, current, select, hasHop } = useTripSelection()
   const [tripLoading, setTripLoading] = useState(false)
   const [tripData, setTripData] = useState<TripResp | null>(null)
+  const [showTrip, setShowTrip] = useState(true) // allow closing the Trip card
 
   const handleLocationSelect = async (location: Location) => {
     setIsAddingMarker(true)
@@ -46,7 +48,7 @@ export default function CelestiaPage() {
   const handleMarkerClick = (marker: Marker, position: { x: number; y: number }) => {
     console.log("[v0] Marker clicked:", marker.name, "Facts:", marker.facts.length, "Videos:", marker.videos.length)
 
-    // NEW: remember hop endpoints
+    // remember hop endpoints
     select({
       id: marker.id,
       name: marker.name,
@@ -66,10 +68,16 @@ export default function CelestiaPage() {
     setClearSignal((s) => s + 1)
     setTotalKm(0)
     setSelectedCard(null)
-    setTripData(null) // NEW
+    setTripData(null)
+    setShowTrip(false)
   }
 
-  // NEW: fetch trip once we have previous → current
+  // Reopen Trip card when a new valid hop appears
+  useEffect(() => {
+    if (hasHop) setShowTrip(true)
+  }, [hasHop])
+
+  // Fetch trip once we have previous → current
   useEffect(() => {
     const run = async () => {
       if (!hasHop || !previous || !current) {
@@ -117,6 +125,8 @@ export default function CelestiaPage() {
       setTripLoading(false)
     }
   }
+
+  const tripVisible = hasHop && previous && current && showTrip
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-black via-slate-900 to-black relative overflow-hidden">
@@ -181,7 +191,7 @@ export default function CelestiaPage() {
           </div>
         )}
 
-        {/* Stats Panel */}
+        {/* Stats Panel (auto-relocate if Trip card is visible to avoid overlap) */}
         {markers.length > 0 &&
           (() => {
             const uniquePlaces = new Set(markers.map((m) => m.name)).size
@@ -193,7 +203,13 @@ export default function CelestiaPage() {
             ).size
 
             return (
-              <div className="absolute bottom-4 left-4 bg-black/60 backdrop-blur-sm border border-cyan-400/30 rounded-lg p-4">
+              <div
+                className={
+                  tripVisible
+                    ? "absolute top-4 left-4 bg-black/60 backdrop-blur-sm border border-cyan-400/30 rounded-lg p-4"
+                    : "absolute bottom-4 left-4 bg-black/60 backdrop-blur-sm border border-cyan-400/30 rounded-lg p-4"
+                }
+              >
                 <div className="flex items-center gap-2 mb-2">
                   <Info className="w-4 h-4 text-cyan-400" />
                   <span className="text-cyan-300 font-medium text-sm">Explorer Stats</span>
@@ -218,17 +234,19 @@ export default function CelestiaPage() {
         />
       )}
 
-      {/* Trip Card — bottom-left; same animate-in utilities as HologramCard */}
-      {hasHop && previous && current && (
+      {/* Trip Card — bottom-left; same animate-in utilities; closeable */}
+      {tripVisible && (
         <div className="fixed bottom-6 left-6 z-20 pointer-events-auto">
-          <div className="w-96 animate-in fade-in-0 zoom-in-95 duration-300">
+          <div className="w-[420px] animate-in fade-in-0 zoom-in-95 duration-300">
             <TripCard
-              fromName={previous.name}
-              toName={current.name}
+              fromName={previous!.name}
+              toName={current!.name}
               isLoading={tripLoading}
               itinerary={tripData?.itinerary}
               flights={tripData?.flights}
+              flightsUrl={tripData?.flightsUrl}
               onRefresh={refreshTrip}
+              onClose={() => setShowTrip(false)}
             />
           </div>
         </div>
