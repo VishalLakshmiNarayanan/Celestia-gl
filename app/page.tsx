@@ -12,8 +12,13 @@ import type { Marker, Location, HologramCardData } from "@/lib/types"
 
 export default function CelestiaPage() {
   const { markers, addMarker, clearMarkers, isLoading } = useMarkers()
+
   const [selectedCard, setSelectedCard] = useState<HologramCardData | null>(null)
   const [isAddingMarker, setIsAddingMarker] = useState(false)
+
+  // NEW: total distance + clear signal for flights
+  const [totalKm, setTotalKm] = useState(0)
+  const [clearSignal, setClearSignal] = useState(0)
 
   const handleLocationSelect = async (location: Location) => {
     setIsAddingMarker(true)
@@ -29,14 +34,16 @@ export default function CelestiaPage() {
 
   const handleMarkerClick = (marker: Marker, position: { x: number; y: number }) => {
     console.log("[v0] Marker clicked:", marker.name, "Facts:", marker.facts.length, "Videos:", marker.videos.length)
-    setSelectedCard({
-      marker,
-      isVisible: true,
-      position,
-    })
+    setSelectedCard({ marker, isVisible: true, position })
   }
 
-  const handleCloseCard = () => {
+  const handleCloseCard = () => setSelectedCard(null)
+
+  // NEW: Clear flights/trails *and* markers
+  const handleClearAll = () => {
+    clearMarkers()
+    setClearSignal((s) => s + 1) // tells Globe to wipe arcs/plane immediately
+    setTotalKm(0)
     setSelectedCard(null)
   }
 
@@ -67,10 +74,9 @@ export default function CelestiaPage() {
 
           <div className="flex items-center gap-4">
             <SearchBar onLocationSelect={handleLocationSelect} />
-
             {markers.length > 0 && (
               <Button
-                onClick={clearMarkers}
+                onClick={handleClearAll}
                 variant="outline"
                 size="sm"
                 className="border-red-400/30 text-red-400 hover:bg-red-400/10 hover:border-red-400 bg-transparent"
@@ -91,6 +97,8 @@ export default function CelestiaPage() {
             markers={markers}
             onMarkerClick={handleMarkerClick}
             selectedMarkerId={selectedCard?.marker.id}
+            onTotalDistance={setTotalKm}     // NEW: receive km from globe
+            clearSignal={clearSignal}        // NEW: force clear trails/plane
           />
         </div>
 
@@ -108,7 +116,6 @@ export default function CelestiaPage() {
             const uniquePlaces = new Set(markers.map((m) => m.name)).size
             const uniqueCountries = new Set(
               markers.map((m) => {
-                // Extract country from location name (last part after comma)
                 const parts = m.name.split(",").map((p) => p.trim())
                 return parts[parts.length - 1]
               }),
@@ -123,7 +130,8 @@ export default function CelestiaPage() {
                 <div className="space-y-1 text-xs text-cyan-100/80">
                   <div>Places Viewed: {uniquePlaces}</div>
                   <div>Countries Viewed: {uniqueCountries}</div>
-                  <div>Total Markers: {markers.length}</div>
+                  {/* CHANGED: show distance instead of total markers */}
+                  <div>Total Distance: {totalKm.toLocaleString()} km</div>
                 </div>
               </div>
             )
