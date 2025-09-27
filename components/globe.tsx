@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import dynamic from "next/dynamic"
 import type { Marker } from "@/lib/types"
 
-// Dynamically import Globe to avoid SSR issues
+// Avoid SSR for three/Globe
 const Globe = dynamic(() => import("react-globe.gl"), { ssr: false })
 
 interface GlobeComponentProps {
@@ -19,38 +19,50 @@ export function GlobeComponent({
   selectedMarkerId,
 }: GlobeComponentProps) {
   const globeRef = useRef<any>(null)
+
+  // Mount + ready guards
+  const isMounted = useRef(false)
+  const globeReadySignal = useRef(false) // set by onGlobeReady, committed in effect
   const [globeReady, setGlobeReady] = useState(false)
 
-  // Initialize camera + autorotate after textures are ready (prod safe)
+  // Track mount/unmount and safely commit ready signal
+  useEffect(() => {
+    isMounted.current = true
+    if (globeReadySignal.current && !globeReady) {
+      // commit any early "ready" signal after mount
+      setGlobeReady(true)
+    }
+    return () => {
+      isMounted.current = false
+    }
+  }, [globeReady])
+
+  // Initialize camera + autorotate once ready (prod-safe)
   useEffect(() => {
     if (!globeRef.current || !globeReady) return
 
     const raf = requestAnimationFrame(() => {
       const controls = globeRef.current?.controls?.()
-
-      // Intro pose
       globeRef.current?.pointOfView?.({ altitude: 2.5 }, 800)
 
       if (controls) {
         controls.autoRotate = true
         controls.autoRotateSpeed = 0.45
 
-        // Keep spinning after user interaction
+        // keep spinning after user drag
         const handleEnd = () => {
           controls.autoRotate = true
         }
         controls.addEventListener?.("end", handleEnd)
-
-        return () => {
-          controls.removeEventListener?.("end", handleEnd)
-        }
+        // cleanup listener on unmount
+        return () => controls.removeEventListener?.("end", handleEnd)
       }
     })
 
     return () => cancelAnimationFrame(raf)
   }, [globeReady])
 
-  // Fly to the newest marker deterministically
+  // Fly to the newest marker when data length changes
   useEffect(() => {
     if (!globeRef.current || !globeReady || markers.length === 0) return
     const m = markers[markers.length - 1]
@@ -79,12 +91,12 @@ export function GlobeComponent({
     <div className="relative w-full h-full">
       <Globe
         ref={globeRef}
-        // Local textures (served from /public)
+        // Local textures (from /public)
         globeImageUrl="/textures/earth-night.jpg"
         bumpImageUrl="/textures/earth-topology.png"
         backgroundImageUrl="/textures/night-sky.png"
 
-        // Points (markers)
+        // Points
         pointsData={markers}
         pointAltitude={0.02}
         pointRadius={0.8}
@@ -98,14 +110,18 @@ export function GlobeComponent({
         `}
         onPointClick={handleMarkerClick}
 
-        // Atmosphere / look
+        // Look
         atmosphereColor="#00ffff"
         atmosphereAltitude={0.15}
 
-        // Animation + readiness
-        animateIn={false}           // avoid race with our own tween
+        // Animation/readiness
+        animateIn={false}
         waitForGlobeReady={true}
-        onGlobeReady={() => setGlobeReady(true)}
+        onGlobeReady={() => {
+          // This can fire before our component mounts in prod.
+          globeReadySignal.current = true
+          if (isMounted.current) setGlobeReady(true)
+        }}
 
         // Interaction
         enablePointerInteraction={true}
@@ -113,16 +129,11 @@ export function GlobeComponent({
 
       {/* Holographic overlay effects */}
       <div className="absolute inset-0 pointer-events-none">
-        {/* Scanlines effect */}
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-cyan-400/5 to-transparent animate-pulse" />
-
-        {/* Corner brackets */}
         <div className="absolute top-4 left-4 w-8 h-8 border-l-2 border-t-2 border-cyan-400/60" />
         <div className="absolute top-4 right-4 w-8 h-8 border-r-2 border-t-2 border-cyan-400/60" />
         <div className="absolute bottom-4 left-4 w-8 h-8 border-l-2 border-b-2 border-cyan-400/60" />
         <div className="absolute bottom-4 right-4 w-8 h-8 border-r-2 border-b-2 border-cyan-400/60" />
-
-        {/* Grid overlay */}
         <div className="absolute inset-0 opacity-20">
           <div
             className="w-full h-full bg-gradient-to-r from-transparent via-cyan-400/10 to-transparent"
