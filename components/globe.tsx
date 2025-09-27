@@ -86,9 +86,9 @@ export function GlobeComponent({ markers, onMarkerClick, selectedMarkerId }: Glo
     <div className="relative w-full h-full">
       <Globe
         ref={globeRef}
-        globeImageUrl="//unpkg.com/three-globe/example/img/earth-night.jpg"
-        bumpImageUrl="//unpkg.com/three-globe/example/img/earth-topology.png"
-        backgroundImageUrl="//unpkg.com/three-globe/example/img/night-sky.png"
+         globeImageUrl="/textures/earth-night.jpg"
+        bumpImageUrl="/textures/earth-topology.png"
+        backgroundImageUrl="/textures/night-sky.png"
         // Markers configuration
         pointsData={markers}
         pointAltitude={0.02}
