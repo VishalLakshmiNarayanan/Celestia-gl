@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { GlobeComponent } from "@/components/globe"
 import { SearchBar } from "@/components/search-bar"
 import { HologramCard } from "@/components/hologram-card"
@@ -10,15 +10,28 @@ import { Trash2, Info } from "lucide-react"
 import { useMarkers } from "@/hooks/use-markers"
 import type { Marker, Location, HologramCardData } from "@/lib/types"
 
+// NEW: trip selection + UI
+import { useTripSelection } from "@/hooks/use-trip"
+import TripCard from "@/components/trip-card"
+
+type TripResp = { itinerary: any; flights: any[] }
+
 export default function CelestiaPage() {
   const { markers, addMarker, clearMarkers, isLoading } = useMarkers()
 
   const [selectedCard, setSelectedCard] = useState<HologramCardData | null>(null)
   const [isAddingMarker, setIsAddingMarker] = useState(false)
 
-  // NEW: total distance + clear signal for flights
+  // Distance + clear signal (existing)
   const [totalKm, setTotalKm] = useState(0)
   const [clearSignal, setClearSignal] = useState(0)
+
+  // NEW: trip selection state (previous → current)
+  const { previous, current, select, hasHop } = useTripSelection()
+
+  // NEW: trip API state
+  const [tripLoading, setTripLoading] = useState(false)
+  const [tripData, setTripData] = useState<TripResp | null>(null)
 
   const handleLocationSelect = async (location: Location) => {
     setIsAddingMarker(true)
@@ -34,17 +47,106 @@ export default function CelestiaPage() {
 
   const handleMarkerClick = (marker: Marker, position: { x: number; y: number }) => {
     console.log("[v0] Marker clicked:", marker.name, "Facts:", marker.facts.length, "Videos:", marker.videos.length)
+
+    // NEW: remember hop endpoints for TripCard
+    select({
+      id: marker.id,
+      name: marker.name,
+      lat: marker.lat,
+      lng: marker.lng,
+      // @ts-expect-error optional in your type; add if present
+      iata: (marker as any).iata,
+    })
+
+    // existing hologram
     setSelectedCard({ marker, isVisible: true, position })
   }
 
   const handleCloseCard = () => setSelectedCard(null)
 
-  // NEW: Clear flights/trails *and* markers
+  // Clear flights/trails *and* markers
   const handleClearAll = () => {
     clearMarkers()
     setClearSignal((s) => s + 1) // tells Globe to wipe arcs/plane immediately
     setTotalKm(0)
     setSelectedCard(null)
+    setTripData(null) // NEW: also clear trip state
+  }
+
+  // NEW: fetch trip (previous → current) when hop is valid
+  useEffect(() => {
+    const run = async () => {
+      if (!hasHop || !previous || !current) {
+        setTripData(null)
+        return
+      }
+      setTripLoading(true)
+      try {
+        const r = await fetch("/api/trip", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            from: {
+              name: previous.name,
+              lat: previous.lat,
+              lng: previous.lng,
+              // @ts-expect-error optional
+              iata: (previous as any).iata,
+            },
+            to: {
+              name: current.name,
+              lat: current.lat,
+              lng: current.lng,
+              // @ts-expect-error optional
+              iata: (current as any).iata,
+            },
+          }),
+        })
+        const data = await r.json()
+        setTripData(data)
+      } catch (e) {
+        console.error("Trip fetch failed:", e)
+        setTripData(null)
+      } finally {
+        setTripLoading(false)
+      }
+    }
+    run()
+  }, [hasHop, previous, current])
+
+  // NEW: manual refresh for TripCard
+  const refreshTrip = async () => {
+    if (!previous || !current) return
+    setTripLoading(true)
+    setTripData(null)
+    try {
+      const r = await fetch("/api/trip", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from: {
+            name: previous.name,
+            lat: previous.lat,
+            lng: previous.lng,
+            // @ts-expect-error optional
+            iata: (previous as any).iata,
+          },
+          to: {
+            name: current.name,
+            lat: current.lat,
+            lng: current.lng,
+            // @ts-expect-error optional
+            iata: (current as any).iata,
+          },
+        }),
+      })
+      const data = await r.json()
+      setTripData(data)
+    } catch (e) {
+      console.error("Trip refresh failed:", e)
+    } finally {
+      setTripLoading(false)
+    }
   }
 
   return (
@@ -97,8 +199,8 @@ export default function CelestiaPage() {
             markers={markers}
             onMarkerClick={handleMarkerClick}
             selectedMarkerId={selectedCard?.marker.id}
-            onTotalDistance={setTotalKm}     // NEW: receive km from globe
-            clearSignal={clearSignal}        // NEW: force clear trails/plane
+            onTotalDistance={setTotalKm}
+            clearSignal={clearSignal}
           />
         </div>
 
@@ -130,7 +232,6 @@ export default function CelestiaPage() {
                 <div className="space-y-1 text-xs text-cyan-100/80">
                   <div>Places Viewed: {uniquePlaces}</div>
                   <div>Countries Viewed: {uniqueCountries}</div>
-                  {/* CHANGED: show distance instead of total markers */}
                   <div>Total Distance: {totalKm.toLocaleString()} km</div>
                 </div>
               </div>
@@ -153,7 +254,7 @@ export default function CelestiaPage() {
         )}
       </main>
 
-      {/* Hologram Card */}
+      {/* Hologram Card (video + facts) */}
       {selectedCard && (
         <HologramCard
           marker={selectedCard.marker}
@@ -161,6 +262,20 @@ export default function CelestiaPage() {
           onClose={handleCloseCard}
           isVisible={selectedCard.isVisible}
         />
+      )}
+
+      {/* Trip Card — shows alongside the hologram when a hop exists */}
+      {hasHop && previous && current && (
+        <div className="fixed bottom-6 right-6 z-20">
+          <TripCard
+            fromName={previous.name}
+            toName={current.name}
+            isLoading={tripLoading}
+            itinerary={tripData?.itinerary}
+            flights={tripData?.flights}
+            onRefresh={refreshTrip}
+          />
+        </div>
       )}
 
       {/* Holographic scanline effect */}
