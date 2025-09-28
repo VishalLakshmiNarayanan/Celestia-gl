@@ -1,4 +1,4 @@
----
+
 
 # 🌌 CELESTIA — Interactive 3D World Explorer
 
@@ -93,5 +93,4 @@ One-click deploy to **Vercel** — Groq + Pexels integrations are already suppor
 Celestia AI is fully **open-source**.
 Feel free to fork, explore, and extend it — contributions are welcome!
 
----
 
