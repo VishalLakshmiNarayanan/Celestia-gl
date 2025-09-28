@@ -146,7 +146,9 @@ export function HologramCard({ marker, position, onClose, isVisible }: HologramC
   const pickFemaleVoice = () => {
     const voices = window.speechSynthesis.getVoices()
     return (
-      voices.find((v) => /female|woman|zira|susan|samantha|victoria|eva|sofia|natalia|karen|moira/i.test(v.name)) ||
+      voices.find((v) =>
+        /female|woman|zira|susan|samantha|victoria|eva|sofia|natalia|karen|moira/i.test(v.name)
+      ) ||
       voices.find((v) => /en(-|_)?(us|gb|au|in)/i.test(v.lang)) ||
       undefined
     )
@@ -178,10 +180,11 @@ export function HologramCard({ marker, position, onClose, isVisible }: HologramC
       utter.volume = 0.9
       const v = pickFemaleVoice()
       if (v) utter.voice = v
-      else window.speechSynthesis.onvoiceschanged = () => {
-        const vv = pickFemaleVoice()
-        if (vv) utter.voice = vv
-      }
+      else
+        window.speechSynthesis.onvoiceschanged = () => {
+          const vv = pickFemaleVoice()
+          if (vv) utter.voice = vv
+        }
       utter.onstart = () => setCurrentFactIndex(index)
       utter.onend = () => setTimeout(() => speakFact(index + 1), 500)
       utter.onerror = () => {
@@ -200,11 +203,11 @@ export function HologramCard({ marker, position, onClose, isVisible }: HologramC
       style={{ position: "fixed", left, top, zIndex: 1000 }}
       className="animate-in fade-in-0 zoom-in-95 duration-300"
     >
-      {/* Responsive layout:
-          - mobile: stacked column
-          - md+: 2 columns: Video (left), Discovery (right), Narration full row */}
-      <div className="grid gap-4 w-[min(92vw,72rem)]"
-           style={{ gridTemplateColumns: "repeat(auto-fit, minmax(22rem, 1fr))" }}>
+      {/* Responsive layout */}
+      <div
+        className="grid gap-4 w-[min(92vw,72rem)]"
+        style={{ gridTemplateColumns: "repeat(auto-fit, minmax(22rem, 1fr))" }}
+      >
         {/* Video Card */}
         <PanelChrome
           onClose={onClose}
@@ -218,7 +221,9 @@ export function HologramCard({ marker, position, onClose, isVisible }: HologramC
           right={
             <div className="hidden md:flex items-center gap-2 text-xs text-cyan-400/70">
               <Clock className="w-3 h-3" />
-              <span>Added {new Date((marker as any)?.timestamp ?? Date.now()).toLocaleDateString()}</span>
+              <span>
+                Added {new Date((marker as any)?.timestamp ?? Date.now()).toLocaleDateString()}
+              </span>
             </div>
           }
         >
@@ -284,13 +289,15 @@ export function HologramCard({ marker, position, onClose, isVisible }: HologramC
               {(marker.facts || []).map((fact, index) => (
                 <div
                   key={(fact as any)?.id ?? `${index}`}
-                  onClick={() => setSelectedFact(selectedFact?.id === (fact as any)?.id ? null : (fact as any))}
+                  onClick={() =>
+                    setSelectedFact(selectedFact?.id === (fact as any)?.id ? null : (fact as any))
+                  }
                   className={`cursor-pointer p-3 rounded-lg border transition-all duration-300 hover:scale-105 ${
                     selectedFact?.id === (fact as any)?.id
                       ? "bg-cyan-400/20 border-cyan-400/60 shadow-lg shadow-cyan-400/20"
                       : isSpeaking && index === currentFactIndex
-                        ? "bg-cyan-400/15 border-cyan-400/50"
-                        : "bg-cyan-400/5 border-cyan-400/20 hover:bg-cyan-400/10"
+                      ? "bg-cyan-400/15 border-cyan-400/50"
+                      : "bg-cyan-400/5 border-cyan-400/20 hover:bg-cyan-400/10"
                   }`}
                 >
                   <div className="flex items-center gap-2 mb-1">
@@ -329,7 +336,7 @@ export function HologramCard({ marker, position, onClose, isVisible }: HologramC
         {/* Narration Card */}
         <PanelChrome
           onClose={onClose}
-          className="max-h-[70vh]"
+          className="max-h-[70vh] flex flex-col"
           title={
             <>
               <MessageSquare className="w-4 h-4 text-cyan-400" />
@@ -350,7 +357,7 @@ export function HologramCard({ marker, position, onClose, isVisible }: HologramC
             </Button>
           }
         >
-          <div className="p-4">
+          <div className="p-4 overflow-y-auto min-h-0">
             {mascotMode ? (
               hasCoords ? (
                 <MascotNarrator
