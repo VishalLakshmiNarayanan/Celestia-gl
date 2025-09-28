@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { X, MapPin, Clock, Sparkles, Play, Pause } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -23,11 +23,32 @@ export function HologramCard({ marker, position, onClose, isVisible }: HologramC
   const [currentFactIndex, setCurrentFactIndex] = useState(0)
   const [mascotMode, setMascotMode] = useState(false)
 
+  // measure card so we can clamp within viewport
+  const [cardW, setCardW] = useState(0)
+  const [cardH, setCardH] = useState(0)
+
+  useLayoutEffect(() => {
+    const measure = () => {
+      if (!cardRef.current) return
+      const rect = cardRef.current.getBoundingClientRect()
+      setCardW(rect.width)
+      setCardH(rect.height)
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    if (cardRef.current) ro.observe(cardRef.current)
+    window.addEventListener("resize", measure)
+    return () => {
+      ro.disconnect()
+      window.removeEventListener("resize", measure)
+    }
+  }, [])
+
   // Auto-cycle through videos if no specific fact is selected
   useEffect(() => {
-    if (!selectedFact && marker.videos?.length > 1) {
+    if (!selectedFact && (marker.videos?.length ?? 0) > 1) {
       const interval = setInterval(() => {
-        setCurrentVideoIndex((prev) => (prev + 1) % marker.videos.length)
+        setCurrentVideoIndex((prev) => (prev + 1) % (marker.videos?.length ?? 1))
       }, 8000)
       return () => clearInterval(interval)
     }
@@ -35,9 +56,9 @@ export function HologramCard({ marker, position, onClose, isVisible }: HologramC
 
   // Auto-play video when loaded
   useEffect(() => {
-    const videoElement = document.querySelector(".hologram-video") as HTMLVideoElement
+    const videoElement = document.querySelector(".hologram-video") as HTMLVideoElement | null
     if (videoElement && isVideoLoaded) {
-      videoElement.play().catch(console.error)
+      videoElement.play().catch(() => {})
     }
   }, [currentVideoIndex, isVideoLoaded, selectedFact])
 
@@ -49,11 +70,21 @@ export function HologramCard({ marker, position, onClose, isVisible }: HologramC
     }
   }, [isVisible, isSpeaking])
 
-  // Position the card near the clicked marker
+  // ---- dynamic clamping so the card never gets cut ----
+  const M = 16 // margin from viewport edges
+  const computedLeft = Math.min(
+    Math.max(M, position.x + 20),
+    Math.max(M, window.innerWidth - cardW - M)
+  )
+  const computedTop = Math.min(
+    Math.max(M, position.y - 100),
+    Math.max(M, window.innerHeight - cardH - M)
+  )
+
   const cardStyle = {
     position: "fixed" as const,
-    left: Math.min(position.x + 20, window.innerWidth - 420),
-    top: Math.min(position.y - 100, window.innerHeight - 600),
+    left: computedLeft,
+    top: computedTop,
     zIndex: 1000,
   }
 
@@ -77,61 +108,84 @@ export function HologramCard({ marker, position, onClose, isVisible }: HologramC
 
   const hasCoords = typeof lat === "number" && typeof lng === "number"
 
+  // try to pick a female-sounding voice
+  const pickFemaleVoice = () => {
+    const voices = window.speechSynthesis.getVoices()
+    return (
+      voices.find((v) => /female|woman|zira|susan|samantha|victoria|eva|sofia|natalia|karen|moira/i.test(v.name)) ||
+      voices.find((v) => /en(-|_)?(us|gb|au|in)/i.test(v.lang)) || // decent fallback
+      undefined
+    )
+  }
+
   const speakFacts = () => {
     if (mascotMode) return // prevent double narration in mascot mode
-    if ("speechSynthesis" in window) {
-      window.speechSynthesis.cancel()
+    if (!("speechSynthesis" in window)) return
 
-      if (isSpeaking) {
+    window.speechSynthesis.cancel()
+
+    if (isSpeaking) {
+      setIsSpeaking(false)
+      return
+    }
+
+    setIsSpeaking(true)
+    setCurrentFactIndex(0)
+
+    const speakFact = (index: number) => {
+      const facts = marker.facts || []
+      if (index >= facts.length) {
         setIsSpeaking(false)
+        setCurrentFactIndex(0)
         return
       }
 
-      setIsSpeaking(true)
-      setCurrentFactIndex(0)
+      const fact = facts[index]
+      const text = `${fact.title}. ${fact.description}`
+      const utterance = new SpeechSynthesisUtterance(text)
+      utterance.rate = 0.95
+      utterance.pitch = 1.05
+      utterance.volume = 0.9
 
-      const speakFact = (index: number) => {
-        const facts = marker.facts || []
-        if (index >= facts.length) {
-          setIsSpeaking(false)
-          setCurrentFactIndex(0)
-          return
+      const v = pickFemaleVoice()
+      if (v) utterance.voice = v
+      else {
+        // some browsers populate voices asynchronously
+        window.speechSynthesis.onvoiceschanged = () => {
+          const vv = pickFemaleVoice()
+          if (vv) utterance.voice = vv
         }
-
-        const fact = facts[index]
-        const text = `${fact.title}. ${fact.description}`
-        const utterance = new SpeechSynthesisUtterance(text)
-        utterance.rate = 0.9
-        utterance.pitch = 1.1
-        utterance.volume = 0.8
-
-        utterance.onstart = () => setCurrentFactIndex(index)
-        utterance.onend = () => {
-          setTimeout(() => speakFact(index + 1), 500)
-        }
-        utterance.onerror = () => {
-          setIsSpeaking(false)
-          setCurrentFactIndex(0)
-        }
-
-        window.speechSynthesis.speak(utterance)
       }
 
-      speakFact(0)
+      utterance.onstart = () => setCurrentFactIndex(index)
+      utterance.onend = () => setTimeout(() => speakFact(index + 1), 500)
+      utterance.onerror = () => {
+        setIsSpeaking(false)
+        setCurrentFactIndex(0)
+      }
+
+      window.speechSynthesis.speak(utterance)
     }
+
+    speakFact(0)
   }
 
   return (
-    <div ref={cardRef} style={cardStyle} className="w-[36rem] max-w-[90vw] animate-in fade-in-0 zoom-in-95 duration-300">
-      <Card className="bg-black/20 backdrop-blur-xl border-cyan-400/30 shadow-2xl shadow-cyan-400/20 overflow-hidden hologram-flicker relative">
+    <div
+      ref={cardRef}
+      style={cardStyle}
+      className="w-[40rem] max-w-[96vw] animate-in fade-in-0 zoom-in-95 duration-300"
+    >
+      {/* Make the card a column; cap height and let body scroll */}
+      <Card className="bg-black/20 backdrop-blur-xl border-cyan-400/30 shadow-2xl shadow-cyan-400/20 overflow-hidden hologram-flicker relative max-h-[86vh] flex flex-col">
         {mascotMode && (
           <div className="absolute top-2 left-2 z-10 text-[11px] tracking-wide px-2 py-1 rounded bg-cyan-500/20 border border-cyan-400/40 text-cyan-100">
             Mascot narrating
           </div>
         )}
 
-        {/* Header */}
-        <div className="relative p-4 border-b border-cyan-400/20">
+        {/* Header (fixed height) */}
+        <div className="relative p-4 border-b border-cyan-400/20 shrink-0">
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-2">
               <MapPin className="w-4 h-4 text-cyan-400" />
@@ -171,9 +225,9 @@ export function HologramCard({ marker, position, onClose, isVisible }: HologramC
           </div>
         </div>
 
-        {/* Video Section */}
+        {/* Video Section (fixed aspect) */}
         {currentVideo && (
-          <div className="relative aspect-video bg-black/40">
+          <div className="relative aspect-video bg-black/40 shrink-0">
             <video
               className="hologram-video w-full h-full object-cover"
               src={(currentVideo as any)?.url}
@@ -206,8 +260,8 @@ export function HologramCard({ marker, position, onClose, isVisible }: HologramC
           </div>
         )}
 
-        {/* Facts Section */}
-        <div className="p-4 space-y-3">
+        {/* Body (scrolls) */}
+        <div className="p-4 space-y-3 overflow-y-auto flex-1 min-h-0">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-cyan-400" />
