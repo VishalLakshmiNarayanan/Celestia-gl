@@ -14,12 +14,22 @@ interface HologramCardProps {
   isVisible: boolean
 }
 
-/* -------------------- Draggable panel hook -------------------- */
+/* -------------------- Draggable panel hook (safe) -------------------- */
 function useDraggable(initial: { left: number; top: number }) {
   const [pos, setPos] = useState(initial)
-  const [dragging, setDragging] = useState(false)
   const [z, setZ] = useState(1)
-  const startRef = useRef<{ x: number; y: number; left: number; top: number } | null>(null)
+
+  // store active drag info
+  const stateRef = useRef<{
+    el: HTMLElement | null
+    pointerId: number | null
+    startX: number
+    startY: number
+    startLeft: number
+    startTop: number
+    onMove?: (ev: PointerEvent) => void
+    onUp?: (ev: PointerEvent) => void
+  } | null>(null)
 
   function clamp(x: number, y: number, w: number, h: number, margin = 8) {
     const maxL = Math.max(margin, window.innerWidth - w - margin)
@@ -33,35 +43,75 @@ function useDraggable(initial: { left: number; top: number }) {
   function onPointerDown(
     e: React.PointerEvent,
     getSize: () => { w: number; h: number },
-    bringToFront: () => void
+    bringToFront?: () => void
   ) {
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
-    const { w, h } = getSize()
-    startRef.current = { x: e.clientX, y: e.clientY, left: pos.left, top: pos.top }
-    setDragging(true)
-    bringToFront()
+    const el = e.currentTarget as HTMLElement | null
+    if (!el) return
+    e.preventDefault()
+    ;(el as any).style.touchAction = "none" // smoother touch drag
 
-    const onMove = (ev: PointerEvent) => {
-      if (!startRef.current) return
-      const dx = ev.clientX - startRef.current.x
-      const dy = ev.clientY - startRef.current.y
-      const next = clamp(startRef.current.left + dx, startRef.current.top + dy, w, h)
+    const { w, h } = getSize()
+    const startLeft = pos.left
+    const startTop = pos.top
+    const startX = e.clientX
+    const startY = e.clientY
+    const pointerId = e.pointerId
+
+    // capture if available
+    try {
+      el.setPointerCapture?.(pointerId)
+    } catch {
+      /* ignore */
+    }
+
+    // z-index bump
+    setZ((v) => v + 1)
+    bringToFront?.()
+
+    const move = (ev: PointerEvent) => {
+      const dx = ev.clientX - startX
+      const dy = ev.clientY - startY
+      const next = clamp(startLeft + dx, startTop + dy, w, h)
       setPos(next)
     }
-    const onUp = (ev: PointerEvent) => {
-      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId)
-      window.removeEventListener("pointermove", onMove)
-      window.removeEventListener("pointerup", onUp)
-      setDragging(false)
+
+    const up = (_ev: PointerEvent) => {
+      try {
+        if (el && typeof el.hasPointerCapture === "function" && el.hasPointerCapture(pointerId)) {
+          el.releasePointerCapture?.(pointerId)
+        }
+      } catch {
+        /* ignore */
+      }
+      window.removeEventListener("pointermove", move)
+      window.removeEventListener("pointerup", up)
+      window.removeEventListener("pointercancel", up)
+      if (stateRef.current) stateRef.current.el = null
     }
-    window.addEventListener("pointermove", onMove)
-    window.addEventListener("pointerup", onUp)
+
+    stateRef.current = { el, pointerId, startX, startY, startLeft, startTop, onMove: move, onUp: up }
+
+    window.addEventListener("pointermove", move, { passive: true })
+    window.addEventListener("pointerup", up, { passive: true })
+    window.addEventListener("pointercancel", up, { passive: true })
   }
 
-  // bump z-index while dragging
+  // Cleanup if unmounted mid-drag
   useEffect(() => {
-    if (dragging) setZ((v) => v + 1)
-  }, [dragging])
+    return () => {
+      const s = stateRef.current
+      if (s) {
+        window.removeEventListener("pointermove", s.onMove as any)
+        window.removeEventListener("pointerup", s.onUp as any)
+        window.removeEventListener("pointercancel", s.onUp as any)
+        try {
+          if (s.el && s.pointerId != null && s.el.hasPointerCapture?.(s.pointerId)) {
+            s.el.releasePointerCapture?.(s.pointerId)
+          }
+        } catch { /* ignore */ }
+      }
+    }
+  }, [])
 
   return { pos, setPos, onPointerDown, z }
 }
@@ -96,20 +146,20 @@ function PanelChrome({
     return { w: rect?.width ?? 360, h: rect?.height ?? 320 }
   }
 
-  // ensure we start inside viewport
+  // ensure starting position is inside viewport (use state, not direct assignment)
   useLayoutEffect(() => {
-  // Ensure we start inside the viewport
-  const el = wrapRef.current
-  if (!el) return
-  const rect = el.getBoundingClientRect()
-  const m = 8
-  const left = Math.min(Math.max(m, pos.left), Math.max(m, window.innerWidth - rect.width - m))
-  const top  = Math.min(Math.max(m, pos.top ), Math.max(m, window.innerHeight - rect.height - m))
-  if (left !== pos.left || top !== pos.top) {
-    setPos({ left, top })        // ✅ update via state (no direct assignment)
-  }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [])
+    const el = wrapRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const m = 8
+    const left = Math.min(Math.max(m, pos.left), Math.max(m, window.innerWidth - rect.width - m))
+    const top = Math.min(Math.max(m, pos.top), Math.max(m, window.innerHeight - rect.height - m))
+    if (left !== pos.left || top !== pos.top) {
+      setPos({ left, top })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   return (
     <div
       ref={wrapRef}
@@ -166,6 +216,8 @@ export function HologramCard({ marker, position, onClose, isVisible }: HologramC
   const [currentFactIndex, setCurrentFactIndex] = useState(0)
   const [mascotMode, setMascotMode] = useState(true)
 
+  if (!isVisible) return null
+
   // safe coords
   const lat =
     (marker as any)?.position?.lat ??
@@ -179,7 +231,7 @@ export function HologramCard({ marker, position, onClose, isVisible }: HologramC
     null
   const hasCoords = typeof lat === "number" && typeof lng === "number"
 
-  // videos
+  // videos auto-rotate
   useEffect(() => {
     if (!selectedFact && (marker.videos?.length ?? 0) > 1) {
       const id = setInterval(() => {
@@ -189,6 +241,7 @@ export function HologramCard({ marker, position, onClose, isVisible }: HologramC
     }
   }, [marker.videos?.length, selectedFact])
 
+  // autoplay loaded video
   useEffect(() => {
     const el = document.querySelector(".hologram-video") as HTMLVideoElement | null
     if (el && isVideoLoaded) el.play().catch(() => {})
@@ -245,9 +298,7 @@ export function HologramCard({ marker, position, onClose, isVisible }: HologramC
     speakFact(0)
   }
 
-  if (!isVisible) return null
-
-  // initial positions (side-by-side, based on click)
+  // initial positions (based on click)
   const baseL = Math.min(Math.max(16, position.x), window.innerWidth - 340)
   const baseT = Math.min(Math.max(16, position.y), window.innerHeight - 260)
 
