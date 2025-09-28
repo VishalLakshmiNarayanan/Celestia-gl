@@ -25,13 +25,13 @@ export function HologramCard({ marker, position, onClose, isVisible }: HologramC
 
   // Auto-cycle through videos if no specific fact is selected
   useEffect(() => {
-    if (!selectedFact && marker.videos.length > 1) {
+    if (!selectedFact && marker.videos?.length > 1) {
       const interval = setInterval(() => {
         setCurrentVideoIndex((prev) => (prev + 1) % marker.videos.length)
       }, 8000)
       return () => clearInterval(interval)
     }
-  }, [marker.videos.length, selectedFact])
+  }, [marker.videos?.length, selectedFact])
 
   // Auto-play video when loaded
   useEffect(() => {
@@ -58,9 +58,24 @@ export function HologramCard({ marker, position, onClose, isVisible }: HologramC
   }
 
   // Get current video - either from selected fact or general videos
-  const currentVideo = selectedFact?.video || marker.videos[currentVideoIndex]
+  const currentVideo = selectedFact?.video || marker.videos?.[currentVideoIndex]
 
   if (!isVisible) return null
+
+  // ---- safe coords (handle different marker shapes) ----
+  const lat =
+    (marker as any)?.position?.lat ??
+    (marker as any)?.lat ??
+    (marker as any)?.coords?.lat ??
+    null
+
+  const lng =
+    (marker as any)?.position?.lng ??
+    (marker as any)?.lng ??
+    (marker as any)?.coords?.lng ??
+    null
+
+  const hasCoords = typeof lat === "number" && typeof lng === "number"
 
   const speakFacts = () => {
     if (mascotMode) return // prevent double narration in mascot mode
@@ -76,13 +91,14 @@ export function HologramCard({ marker, position, onClose, isVisible }: HologramC
       setCurrentFactIndex(0)
 
       const speakFact = (index: number) => {
-        if (index >= marker.facts.length) {
+        const facts = marker.facts || []
+        if (index >= facts.length) {
           setIsSpeaking(false)
           setCurrentFactIndex(0)
           return
         }
 
-        const fact = marker.facts[index]
+        const fact = facts[index]
         const text = `${fact.title}. ${fact.description}`
         const utterance = new SpeechSynthesisUtterance(text)
         utterance.rate = 0.9
@@ -108,22 +124,36 @@ export function HologramCard({ marker, position, onClose, isVisible }: HologramC
   return (
     <div ref={cardRef} style={cardStyle} className="w-96 animate-in fade-in-0 zoom-in-95 duration-300">
       <Card className="bg-black/20 backdrop-blur-xl border-cyan-400/30 shadow-2xl shadow-cyan-400/20 overflow-hidden hologram-flicker relative">
+        {mascotMode && (
+          <div className="absolute top-2 left-2 z-10 text-[11px] tracking-wide px-2 py-1 rounded bg-cyan-500/20 border border-cyan-400/40 text-cyan-100">
+            Mascot narrating
+          </div>
+        )}
+
         {/* Header */}
         <div className="relative p-4 border-b border-cyan-400/20">
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-2">
               <MapPin className="w-4 h-4 text-cyan-400" />
-              <h3 className="text-cyan-100 font-semibold text-sm line-clamp-2">{marker.name}</h3>
+              <h3 className="text-cyan-100 font-semibold text-sm line-clamp-2">
+                {(marker as any)?.name ?? "Unknown place"}
+              </h3>
             </div>
             <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setMascotMode((v) => !v)}
-                className={`text-cyan-400 hover:text-cyan-300 hover:bg-cyan-400/10 h-6 px-2 ${mascotMode ? "bg-cyan-400/20" : ""}`}
-              >
-                Mascot {mascotMode ? "On" : "Off"}
-              </Button>
+              <div className="flex items-center gap-2 px-2 py-1 rounded bg-black/30 border border-cyan-400/30">
+                <span className="text-[11px] text-cyan-300/80">Mascot mode</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setMascotMode((v) => !v)}
+                  className={`h-6 px-2 text-cyan-100 hover:text-cyan-50 hover:bg-cyan-400/10 ${
+                    mascotMode ? "bg-cyan-400/20" : ""
+                  }`}
+                >
+                  {mascotMode ? "On" : "Off"}
+                </Button>
+              </div>
+
               <Button
                 variant="ghost"
                 size="sm"
@@ -137,7 +167,7 @@ export function HologramCard({ marker, position, onClose, isVisible }: HologramC
 
           <div className="flex items-center gap-1 mt-2 text-xs text-cyan-400/70">
             <Clock className="w-3 h-3" />
-            <span>Added {new Date(marker.timestamp).toLocaleDateString()}</span>
+            <span>Added {new Date((marker as any)?.timestamp ?? Date.now()).toLocaleDateString()}</span>
           </div>
         </div>
 
@@ -146,7 +176,7 @@ export function HologramCard({ marker, position, onClose, isVisible }: HologramC
           <div className="relative aspect-video bg-black/40">
             <video
               className="hologram-video w-full h-full object-cover"
-              src={currentVideo.url}
+              src={(currentVideo as any)?.url}
               loop
               muted
               playsInline
@@ -156,9 +186,9 @@ export function HologramCard({ marker, position, onClose, isVisible }: HologramC
 
             <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
 
-            {!selectedFact && marker.videos.length > 1 && (
+            {!selectedFact && (marker.videos?.length ?? 0) > 1 && (
               <div className="absolute bottom-2 right-2 bg-black/60 text-cyan-400 text-xs px-2 py-1 rounded">
-                {currentVideoIndex + 1} / {marker.videos.length}
+                {currentVideoIndex + 1} / {marker.videos?.length}
               </div>
             )}
 
@@ -197,12 +227,12 @@ export function HologramCard({ marker, position, onClose, isVisible }: HologramC
           </div>
 
           <div className="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto">
-            {marker.facts.map((fact, index) => (
+            {(marker.facts || []).map((fact, index) => (
               <div
-                key={fact.id}
-                onClick={() => setSelectedFact(selectedFact?.id === fact.id ? null : fact)}
+                key={(fact as any)?.id ?? `${index}`}
+                onClick={() => setSelectedFact(selectedFact?.id === (fact as any)?.id ? null : (fact as any))}
                 className={`cursor-pointer p-3 rounded-lg border transition-all duration-300 hover:scale-105 ${
-                  selectedFact?.id === fact.id
+                  selectedFact?.id === (fact as any)?.id
                     ? "bg-cyan-400/20 border-cyan-400/60 shadow-lg shadow-cyan-400/20"
                     : isSpeaking && index === currentFactIndex
                       ? "bg-cyan-400/15 border-cyan-400/50"
@@ -210,12 +240,16 @@ export function HologramCard({ marker, position, onClose, isVisible }: HologramC
                 }`}
               >
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-lg">{fact.icon}</span>
-                  <span className="text-cyan-300 text-xs font-medium">{fact.category}</span>
+                  <span className="text-lg">{(fact as any)?.icon}</span>
+                  <span className="text-cyan-300 text-xs font-medium">{(fact as any)?.category}</span>
                 </div>
-                <h4 className="text-cyan-100 text-xs font-semibold mb-1 line-clamp-2">{fact.title}</h4>
-                <p className="text-cyan-100/80 text-xs leading-relaxed line-clamp-3">{fact.description}</p>
-                {fact.video && (
+                <h4 className="text-cyan-100 text-xs font-semibold mb-1 line-clamp-2">
+                  {(fact as any)?.title}
+                </h4>
+                <p className="text-cyan-100/80 text-xs leading-relaxed line-clamp-3">
+                  {(fact as any)?.description}
+                </p>
+                {(fact as any)?.video && (
                   <div className="mt-2 flex items-center gap-1 text-cyan-400/70 text-xs">
                     <Play className="w-3 h-3" />
                     <span>Video</span>
@@ -238,14 +272,23 @@ export function HologramCard({ marker, position, onClose, isVisible }: HologramC
 
           {mascotMode && (
             <div className="pt-2">
-              <MascotNarrator
-                placeName={marker.name}
-                lat={marker.position.lat}
-                lng={marker.position.lng}
-                facts={marker.facts?.map(f => ({ title: f.title, description: f.description }))}
-                tone="friendly"
-                autoSpeak={true}
-              />
+              {hasCoords ? (
+                <MascotNarrator
+                  placeName={(marker as any)?.name ?? "This place"}
+                  lat={lat as number}
+                  lng={lng as number}
+                  facts={(marker.facts || []).map((f: any) => ({
+                    title: f.title,
+                    description: f.description,
+                  }))}
+                  tone="friendly"
+                  autoSpeak={true}
+                />
+              ) : (
+                <div className="text-[12px] text-cyan-300/80 bg-black/30 border border-cyan-400/30 rounded px-2 py-1">
+                  Missing coordinates for this marker — mascot narration hidden.
+                </div>
+              )}
             </div>
           )}
         </div>
