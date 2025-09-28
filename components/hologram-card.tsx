@@ -122,7 +122,7 @@ export function HologramCard({ marker, position, onClose, isVisible }: HologramC
   }
 
   return (
-    <div ref={cardRef} style={cardStyle} className="w-96 animate-in fade-in-0 zoom-in-95 duration-300">
+    <div ref={cardRef} style={cardStyle} className="w-[36rem] max-w-[90vw] animate-in fade-in-0 zoom-in-95 duration-300">
       <Card className="bg-black/20 backdrop-blur-xl border-cyan-400/30 shadow-2xl shadow-cyan-400/20 overflow-hidden hologram-flicker relative">
         {mascotMode && (
           <div className="absolute top-2 left-2 z-10 text-[11px] tracking-wide px-2 py-1 rounded bg-cyan-500/20 border border-cyan-400/40 text-cyan-100">

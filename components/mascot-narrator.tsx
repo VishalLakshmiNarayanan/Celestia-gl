@@ -75,10 +75,20 @@ export default function MascotNarrator({
   function speak(text: string) {
     if (!text || typeof window === "undefined" || !("speechSynthesis" in window)) return
     stopSpeech()
-    const utter = new SpeechSynthesisUtterance(text)
-    utter.rate = 0.95
-    utter.pitch = 1.05
-    utter.volume = 0.9
+    const utterance = new SpeechSynthesisUtterance(text)
+utterance.rate = 0.95
+utterance.pitch = 1.05
+utterance.volume = 0.9
+
+// try to pick a female voice
+const voices = window.speechSynthesis.getVoices()
+const female = voices.find(v =>
+  /female|woman|zira|susan|samantha|victoria/i.test(v.name)
+)
+if (female) {
+  utterance.voice = female
+}
+
 
     utter.onstart = () => {
       setIsSpeaking(true)
