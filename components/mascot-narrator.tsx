@@ -38,7 +38,7 @@ export default function MascotNarrator({
     "/mascot/cel7.png",
     "/mascot/cel8.png"
   ]
-  const mascotIdle = "/mascot/neutral.png"
+  const mascotIdle = "/mascot/cel1.png"
 
   async function fetchNarration() {
     setLoading(true)
@@ -92,7 +92,7 @@ if (female) {
 
     utter.onstart = () => {
       setIsSpeaking(true)
-      animTimer.current = window.setInterval(() => setFrame((f) => (f + 1) % mascotFrames.length), 120)
+      animTimer.current = window.setInterval(() => setFrame((f) => (f + 1) % mascotFrames.length), 300)
     }
     utter.onend = () => {
       setIsSpeaking(false)
