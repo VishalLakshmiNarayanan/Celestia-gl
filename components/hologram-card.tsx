@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import { X, MapPin, Clock, Sparkles, Play, Pause } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import MascotNarrator from "@/components/mascot-narrator"
 import type { Marker, FactCard } from "@/lib/types"
 
 interface HologramCardProps {
@@ -20,6 +21,7 @@ export function HologramCard({ marker, position, onClose, isVisible }: HologramC
   const [isVideoLoaded, setIsVideoLoaded] = useState(false)
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [currentFactIndex, setCurrentFactIndex] = useState(0)
+  const [mascotMode, setMascotMode] = useState(false)
 
   // Auto-cycle through videos if no specific fact is selected
   useEffect(() => {
@@ -61,6 +63,7 @@ export function HologramCard({ marker, position, onClose, isVisible }: HologramC
   if (!isVisible) return null
 
   const speakFacts = () => {
+    if (mascotMode) return // prevent double narration in mascot mode
     if ("speechSynthesis" in window) {
       window.speechSynthesis.cancel()
 
@@ -104,7 +107,7 @@ export function HologramCard({ marker, position, onClose, isVisible }: HologramC
 
   return (
     <div ref={cardRef} style={cardStyle} className="w-96 animate-in fade-in-0 zoom-in-95 duration-300">
-      <Card className="bg-black/20 backdrop-blur-xl border-cyan-400/30 shadow-2xl shadow-cyan-400/20 overflow-hidden hologram-flicker">
+      <Card className="bg-black/20 backdrop-blur-xl border-cyan-400/30 shadow-2xl shadow-cyan-400/20 overflow-hidden hologram-flicker relative">
         {/* Header */}
         <div className="relative p-4 border-b border-cyan-400/20">
           <div className="flex items-start justify-between">
@@ -112,14 +115,24 @@ export function HologramCard({ marker, position, onClose, isVisible }: HologramC
               <MapPin className="w-4 h-4 text-cyan-400" />
               <h3 className="text-cyan-100 font-semibold text-sm line-clamp-2">{marker.name}</h3>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onClose}
-              className="text-cyan-400 hover:text-cyan-300 hover:bg-cyan-400/10 h-6 w-6 p-0"
-            >
-              <X className="w-4 h-4" />
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setMascotMode((v) => !v)}
+                className={`text-cyan-400 hover:text-cyan-300 hover:bg-cyan-400/10 h-6 px-2 ${mascotMode ? "bg-cyan-400/20" : ""}`}
+              >
+                Mascot {mascotMode ? "On" : "Off"}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onClose}
+                className="text-cyan-400 hover:text-cyan-300 hover:bg-cyan-400/10 h-6 w-6 p-0"
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
           </div>
 
           <div className="flex items-center gap-1 mt-2 text-xs text-cyan-400/70">
@@ -143,7 +156,6 @@ export function HologramCard({ marker, position, onClose, isVisible }: HologramC
 
             <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
 
-            {/* Video indicator */}
             {!selectedFact && marker.videos.length > 1 && (
               <div className="absolute bottom-2 right-2 bg-black/60 text-cyan-400 text-xs px-2 py-1 rounded">
                 {currentVideoIndex + 1} / {marker.videos.length}
@@ -221,6 +233,19 @@ export function HologramCard({ marker, position, onClose, isVisible }: HologramC
               </div>
               <h4 className="text-cyan-100 text-sm font-semibold mb-2">{selectedFact.title}</h4>
               <p className="text-cyan-100/90 text-sm leading-relaxed">{selectedFact.description}</p>
+            </div>
+          )}
+
+          {mascotMode && (
+            <div className="pt-2">
+              <MascotNarrator
+                placeName={marker.name}
+                lat={marker.position.lat}
+                lng={marker.position.lng}
+                facts={marker.facts?.map(f => ({ title: f.title, description: f.description }))}
+                tone="friendly"
+                autoSpeak={true}
+              />
             </div>
           )}
         </div>
