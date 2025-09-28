@@ -89,7 +89,7 @@ function PanelChrome({
   maxH?: string
 }) {
   const wrapRef = useRef<HTMLDivElement>(null)
-  const { pos, onPointerDown, z } = useDraggable({ left: initialLeft, top: initialTop })
+  const { pos, setPos, onPointerDown, z } = useDraggable({ left: initialLeft, top: initialTop })
 
   const getSize = () => {
     const rect = wrapRef.current?.getBoundingClientRect()
@@ -98,19 +98,18 @@ function PanelChrome({
 
   // ensure we start inside viewport
   useLayoutEffect(() => {
-    const { w, h } = getSize()
-    const m = 8
-    const left = Math.min(Math.max(m, pos.left), Math.max(m, window.innerWidth - w - m))
-    const top = Math.min(Math.max(m, pos.top), Math.max(m, window.innerHeight - h - m))
-    if (left !== pos.left || top !== pos.top) {
-      // @ts-ignore
-      wrapRef.current?.style.left = `${left}px`
-      // @ts-ignore
-      wrapRef.current?.style.top = `${top}px`
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
+  // Ensure we start inside the viewport
+  const el = wrapRef.current
+  if (!el) return
+  const rect = el.getBoundingClientRect()
+  const m = 8
+  const left = Math.min(Math.max(m, pos.left), Math.max(m, window.innerWidth - rect.width - m))
+  const top  = Math.min(Math.max(m, pos.top ), Math.max(m, window.innerHeight - rect.height - m))
+  if (left !== pos.left || top !== pos.top) {
+    setPos({ left, top })        // ✅ update via state (no direct assignment)
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [])
   return (
     <div
       ref={wrapRef}
